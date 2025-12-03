@@ -1,26 +1,48 @@
-import { useState } from "react";
-import { Images, Download, Trash2, ZoomIn, Search } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Images, Download, Trash2, ZoomIn, Search, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-
-// Placeholder data for gallery
-const placeholderImages = [
-  { id: 1, prompt: "A mystical forest with bioluminescent plants", date: "2024-01-15" },
-  { id: 2, prompt: "Cyberpunk city at night with neon signs", date: "2024-01-14" },
-  { id: 3, prompt: "Abstract fluid art in vibrant colors", date: "2024-01-13" },
-  { id: 4, prompt: "Serene Japanese garden in autumn", date: "2024-01-12" },
-  { id: 5, prompt: "Futuristic spaceship interior design", date: "2024-01-11" },
-  { id: 6, prompt: "Underwater coral reef with exotic fish", date: "2024-01-10" },
-];
+import { api, GeneratedImage } from "@/lib/api";
+import { toast } from "sonner";
 
 const Gallery = () => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedImage, setSelectedImage] = useState<number | null>(null);
+  const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const filteredImages = placeholderImages.filter((img) =>
-    img.prompt.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => {
+    fetchImages();
+  }, []);
+
+  const fetchImages = async (search?: string) => {
+    setIsLoading(true);
+    try {
+      const data = await api.getImages(search);
+      setImages(data);
+    } catch (err) {
+      toast.error("Failed to load gallery");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSearch = (value: string) => {
+    setSearchQuery(value);
+    // Debounce search
+    const timer = setTimeout(() => fetchImages(value), 300);
+    return () => clearTimeout(timer);
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await api.deleteImage(id);
+      setImages((prev) => prev.filter((img) => img.id !== id));
+      toast.success("Image deleted");
+    } catch (err) {
+      toast.error("Failed to delete image");
+    }
+  };
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in">
@@ -34,25 +56,31 @@ const Gallery = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearch(e.target.value)}
             placeholder="Search by prompt..."
             className="pl-10 bg-secondary/50 border-border/50"
           />
         </div>
       </div>
 
-      {/* Gallery Grid */}
-      {filteredImages.length > 0 ? (
+      {/* Loading State */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+        </div>
+      ) : images.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredImages.map((image) => (
+          {images.map((image) => (
             <Dialog key={image.id}>
               <div className="group glass rounded-xl overflow-hidden">
-                {/* Image Placeholder */}
+                {/* Image */}
                 <DialogTrigger asChild>
-                  <div className="aspect-square bg-gradient-to-br from-secondary to-muted cursor-pointer relative overflow-hidden">
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Images className="w-12 h-12 text-muted-foreground/30" />
-                    </div>
+                  <div className="aspect-square cursor-pointer relative overflow-hidden">
+                    <img
+                      src={image.url}
+                      alt={image.prompt}
+                      className="w-full h-full object-cover"
+                    />
                     {/* Hover Overlay */}
                     <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <ZoomIn className="w-8 h-8 text-primary" />
@@ -64,12 +92,21 @@ const Gallery = () => {
                 <div className="p-4">
                   <p className="text-sm text-foreground line-clamp-2 mb-2">{image.prompt}</p>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">{image.date}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(image.created_at).toLocaleDateString()}
+                    </span>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-primary">
-                        <Download className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-destructive">
+                      <a href={image.url} download>
+                        <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-primary">
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      </a>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-8 h-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => handleDelete(image.id)}
+                      >
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
@@ -79,12 +116,16 @@ const Gallery = () => {
 
               {/* Modal */}
               <DialogContent className="max-w-3xl glass border-border/50">
-                <div className="aspect-square bg-gradient-to-br from-secondary to-muted rounded-lg flex items-center justify-center">
-                  <Images className="w-24 h-24 text-muted-foreground/30" />
-                </div>
+                <img
+                  src={image.url}
+                  alt={image.prompt}
+                  className="w-full rounded-lg"
+                />
                 <div className="mt-4">
                   <p className="text-foreground mb-2">{image.prompt}</p>
-                  <p className="text-sm text-muted-foreground">Generated on {image.date}</p>
+                  <p className="text-sm text-muted-foreground">
+                    Generated on {new Date(image.created_at).toLocaleDateString()}
+                  </p>
                 </div>
               </DialogContent>
             </Dialog>

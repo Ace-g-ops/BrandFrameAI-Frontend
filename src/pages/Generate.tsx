@@ -1,19 +1,21 @@
 import { useState } from "react";
-import { Sparkles, Wand2, Settings, Loader2 } from "lucide-react";
+import { Sparkles, Wand2, Settings, Loader2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { useImageGeneration } from "@/hooks/useImageGeneration";
 
 const Generate = () => {
   const [prompt, setPrompt] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
   const [settings, setSettings] = useState({
     aspectRatio: "1:1",
     steps: 30,
     guidance: 7.5,
   });
+
+  const { generate, isGenerating, generatedImage } = useImageGeneration();
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -21,11 +23,12 @@ const Generate = () => {
       return;
     }
     
-    setIsGenerating(true);
-    // Simulate generation
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsGenerating(false);
-    toast.success("Image generated successfully!");
+    await generate({
+      prompt,
+      aspect_ratio: settings.aspectRatio,
+      steps: settings.steps,
+      guidance: settings.guidance,
+    });
   };
 
   return (
@@ -139,8 +142,20 @@ const Generate = () => {
 
         {/* Preview Section */}
         <div className="glass rounded-xl p-6 flex flex-col">
-          <label className="text-sm font-medium text-foreground mb-4">Preview</label>
-          <div className="flex-1 min-h-[400px] rounded-lg bg-secondary/30 border border-border/30 flex items-center justify-center">
+          <div className="flex items-center justify-between mb-4">
+            <label className="text-sm font-medium text-foreground">Preview</label>
+            {generatedImage && (
+              <a
+                href={generatedImage.url}
+                download
+                className="text-sm text-primary hover:text-primary/80 flex items-center gap-1"
+              >
+                <Download className="w-4 h-4" />
+                Download
+              </a>
+            )}
+          </div>
+          <div className="flex-1 min-h-[400px] rounded-lg bg-secondary/30 border border-border/30 flex items-center justify-center overflow-hidden">
             {isGenerating ? (
               <div className="text-center">
                 <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center animate-pulse-glow">
@@ -148,6 +163,12 @@ const Generate = () => {
                 </div>
                 <p className="text-muted-foreground">Creating your masterpiece...</p>
               </div>
+            ) : generatedImage ? (
+              <img
+                src={generatedImage.url}
+                alt={generatedImage.prompt}
+                className="w-full h-full object-contain"
+              />
             ) : (
               <div className="text-center px-8">
                 <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted/50 flex items-center justify-center">
