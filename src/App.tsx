@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Generate from "./pages/Generate";
 import Gallery from "./pages/Gallery";
 import Presets from "./pages/Presets";
+import Auth from "./pages/auth";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -18,15 +19,26 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/generate" element={<Generate />} />
-            <Route path="/gallery" element={<Gallery />} />
-            <Route path="/presets" element={<Presets />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Layout>
+        <Routes>
+          {/* Auth page - standalone, outside Layout */}
+          <Route path="/auth" element={<Auth />} />
+          
+          {/* Protected routes - inside Layout */}
+          <Route
+            path="/*"
+            element={
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<Index />} />
+                  <Route path="/generate" element={<Generate />} />
+                  <Route path="/gallery" element={<Gallery />} />
+                  <Route path="/presets" element={<Presets />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Layout>
+            }
+          />
+        </Routes>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

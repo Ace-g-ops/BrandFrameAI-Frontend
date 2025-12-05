@@ -26,7 +26,7 @@ export function AppSidebar() {
         </div>
         {!collapsed && (
           <div className="overflow-hidden">
-            <h1 className="font-semibold text-foreground truncate">ImageAI</h1>
+            <h1 className="font-semibold text-foreground truncate">BrandFrame AI</h1>
             <p className="text-xs text-muted-foreground">Text to Image</p>
           </div>
         )}

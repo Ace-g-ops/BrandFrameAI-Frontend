@@ -5,7 +5,7 @@ const Index = () => {
   const navigate = useNavigate();
   
   useEffect(() => {
-    navigate("/generate", { replace: true });
+    navigate("/auth", { replace: true });
   }, [navigate]);
 
   return null;
