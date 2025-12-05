@@ -8,7 +8,7 @@ import Index from "./pages/Index";
 import Generate from "./pages/Generate";
 import Gallery from "./pages/Gallery";
 import Presets from "./pages/Presets";
-import Auth from "./pages/auth";
+import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();

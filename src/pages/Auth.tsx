@@ -1,12 +1,16 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sparkles, Mail, Lock, User } from "lucide-react";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
 
 const Auth = () => {
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   
   // Login form state
@@ -23,25 +27,38 @@ const Auth = () => {
     e.preventDefault();
     setIsLoading(true);
     
-    // TODO: Add your Laravel API login logic here
-    console.log("Login:", { email: loginEmail, password: loginPassword });
-    
-    setIsLoading(false);
+    try {
+      await api.login(loginEmail, loginPassword);
+      toast.success("Login successful!");
+      navigate("/generate");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Login failed";
+      toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (signupPassword !== signupConfirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    
     setIsLoading(true);
     
-    // TODO: Add your Laravel API signup logic here
-    console.log("Signup:", { 
-      name: signupName, 
-      email: signupEmail, 
-      password: signupPassword,
-      password_confirmation: signupConfirmPassword 
-    });
-    
-    setIsLoading(false);
+    try {
+      await api.register(signupName, signupEmail, signupPassword, signupConfirmPassword);
+      toast.success("Account created successfully!");
+      navigate("/generate");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Registration failed";
+      toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -172,7 +189,7 @@ const Auth = () => {
                     </div>
                   </div>
 
-                  {/* <div className="space-y-2">
+                  <div className="space-y-2">
                     <Label htmlFor="signup-confirm">Confirm Password</Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -186,7 +203,7 @@ const Auth = () => {
                         required
                       />
                     </div>
-                  </div> */}
+                  </div>
 
                   <Button
                     type="submit"
