@@ -29,6 +29,21 @@ export interface Preset {
   category: string;
 }
 
+export interface AuthResponse {
+  user: {
+    id: number;
+    name: string;
+    email: string;
+  };
+  token: string;
+}
+
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
 class ApiService {
   private baseUrl: string;
 
@@ -36,25 +51,98 @@ class ApiService {
     this.baseUrl = baseUrl;
   }
 
+  private getToken(): string | null {
+    return localStorage.getItem("auth_token");
+  }
+
+  setToken(token: string): void {
+    localStorage.setItem("auth_token", token);
+  }
+
+  clearToken(): void {
+    localStorage.removeItem("auth_token");
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.getToken();
+  }
+
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    requiresAuth = true
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    };
+
+    if (requiresAuth) {
+      const token = this.getToken();
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+    }
+
     const response = await fetch(url, {
       ...options,
       headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        // Add CSRF token if needed for Laravel
-        // "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || "",
+        ...headers,
         ...options.headers,
       },
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: "Request failed" }));
+      throw new Error(error.message || `HTTP error ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  // Authentication
+  async register(name: string, email: string, password: string, password_confirmation: string): Promise<AuthResponse> {
+    const response = await this.request<AuthResponse>("/register", {
+      method: "POST",
+      body: JSON.stringify({ name, email, password, password_confirmation }),
+    }, false);
+    this.setToken(response.token);
+    return response;
+  }
+
+  async login(email: string, password: string): Promise<AuthResponse> {
+    const response = await this.request<AuthResponse>("/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }, false);
+    this.setToken(response.token);
+    return response;
+  }
+
+  async logout(): Promise<void> {
+    await this.request("/logout", { method: "POST" });
+    this.clearToken();
+  }
+
+  async getUser(): Promise<User> {
+    return this.request<User>("/user");
+  }
+
+  // Image Upload
+  async uploadProduct(formData: FormData): Promise<unknown> {
+    const token = this.getToken();
+    const response = await fetch(`${this.baseUrl}/upload-product`, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: "Upload failed" }));
       throw new Error(error.message || `HTTP error ${response.status}`);
     }
 
@@ -69,14 +157,18 @@ class ApiService {
     });
   }
 
-  // Gallery
+  // Gallery (generations)
   async getImages(search?: string): Promise<GeneratedImage[]> {
     const query = search ? `?search=${encodeURIComponent(search)}` : "";
-    return this.request<GeneratedImage[]>(`/images${query}`);
+    return this.request<GeneratedImage[]>(`/generations${query}`);
+  }
+
+  async getImage(id: number): Promise<GeneratedImage> {
+    return this.request<GeneratedImage>(`/generation/${id}`);
   }
 
   async deleteImage(id: number): Promise<void> {
-    return this.request(`/images/${id}`, {
+    return this.request(`/generation/${id}`, {
       method: "DELETE",
     });
   }
@@ -86,10 +178,41 @@ class ApiService {
     return this.request<Preset[]>("/presets");
   }
 
+  async getPreset(id: number): Promise<Preset> {
+    return this.request<Preset>(`/presets/${id}`);
+  }
+
   async createPreset(preset: Omit<Preset, "id">): Promise<Preset> {
     return this.request<Preset>("/presets", {
       method: "POST",
       body: JSON.stringify(preset),
+    });
+  }
+
+  async updatePreset(id: number, preset: Partial<Omit<Preset, "id">>): Promise<Preset> {
+    return this.request<Preset>(`/presets/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(preset),
+    });
+  }
+
+  async deletePreset(id: number): Promise<void> {
+    return this.request(`/presets/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  async applyPreset(id: number): Promise<GeneratedImage> {
+    return this.request<GeneratedImage>(`/presets/${id}/apply`, {
+      method: "POST",
+    });
+  }
+
+  // Batch Processing
+  async batchGenerate(params: unknown): Promise<unknown> {
+    return this.request("/batch-generate", {
+      method: "POST",
+      body: JSON.stringify(params),
     });
   }
 }
