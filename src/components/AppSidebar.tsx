@@ -1,5 +1,16 @@
 import { useState, useEffect } from "react";
-import { Images, Sparkles, Settings2, ChevronLeft, ChevronRight, Wand2, User, LogOut, Loader2 } from "lucide-react";
+import {
+  Images,
+  Sparkles,
+  Settings2,
+  ChevronLeft,
+  ChevronRight,
+  Wand2,
+  User,
+  LogOut,
+  Loader2,
+  X,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { cn } from "@/lib/utils";
@@ -23,7 +34,13 @@ const navItems = [
   { title: "Presets", url: "/presets", icon: Settings2 },
 ];
 
-export function AppSidebar() {
+interface AppSidebarProps {
+  isMobile?: boolean;
+  open?: boolean;
+  onClose?: () => void;
+}
+
+export function AppSidebar({ isMobile, open = false, onClose }: AppSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
   const [isLoadingUser, setIsLoadingUser] = useState(true);
@@ -68,11 +85,25 @@ export function AppSidebar() {
       .slice(0, 2);
   };
 
+  const handleCollapseToggle = () => {
+    // Disable collapse toggle on mobile to keep behavior simple
+    if (isMobile) return;
+    setCollapsed((prev) => !prev);
+  };
+
   return (
     <aside
       className={cn(
-        "h-screen sticky top-0 flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300",
-        collapsed ? "w-16" : "w-64"
+        "flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300",
+        // Desktop: sticky sidebar that can collapse
+        !isMobile && "h-screen sticky top-0",
+        !isMobile && (collapsed ? "w-16" : "w-64"),
+        // Mobile: slide-in drawer
+        isMobile &&
+          cn(
+            "fixed inset-y-0 left-0 z-40 w-64 transform md:hidden",
+            open ? "translate-x-0" : "-translate-x-full"
+          )
       )}
     >
       {/* Logo */}
@@ -81,9 +112,21 @@ export function AppSidebar() {
           <Wand2 className="w-5 h-5 text-primary" />
         </div>
         {!collapsed && (
-          <div className="overflow-hidden">
-            <h1 className="font-semibold text-foreground truncate">BrandFrame AI</h1>
-            <p className="text-xs text-muted-foreground">Text to Image</p>
+          <div className="flex items-center justify-between gap-2 w-full overflow-hidden">
+            <div className="overflow-hidden">
+              <h1 className="font-semibold text-foreground truncate">BrandFrame AI</h1>
+              <p className="text-xs text-muted-foreground">Text to Image</p>
+            </div>
+            {/* Mobile close button */}
+            {isMobile && (
+              <button
+                onClick={onClose}
+                className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground md:hidden"
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close sidebar</span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -169,19 +212,21 @@ export function AppSidebar() {
       )}
 
       {/* Collapse Toggle */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="flex items-center justify-center gap-2 p-4 border-t border-sidebar-border text-muted-foreground hover:text-foreground transition-colors"
-      >
-        {collapsed ? (
-          <ChevronRight className="w-5 h-5" />
-        ) : (
-          <>
-            <ChevronLeft className="w-5 h-5" />
-            <span className="text-sm font-medium">Collapse</span>
-          </>
-        )}
-      </button>
+      {!isMobile && (
+        <button
+          onClick={handleCollapseToggle}
+          className="flex items-center justify-center gap-2 p-4 border-t border-sidebar-border text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {collapsed ? (
+            <ChevronRight className="w-5 h-5" />
+          ) : (
+            <>
+              <ChevronLeft className="w-5 h-5" />
+              <span className="text-sm font-medium">Collapse</span>
+            </>
+          )}
+        </button>
+      )}
     </aside>
   );
 }
