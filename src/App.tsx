@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Generate from "./pages/Generate";
 import Gallery from "./pages/Gallery";
 import Presets from "./pages/Presets";
+import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -33,6 +34,7 @@ const App = () => (
                   <Route path="/generate" element={<Generate />} />
                   <Route path="/gallery" element={<Gallery />} />
                   <Route path="/presets" element={<Presets />} />
+                  <Route path="/profile" element={<Profile />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Layout>

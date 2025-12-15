@@ -1,32 +1,73 @@
-// Configure your Laravel API base URL here
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+import axiosInstance, { handleApiError, createFormData, extractApiData } from './axios';
+
+// API Base URL (for reference, axios instance handles this)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://brandframeai.fly.dev/api";
+
+// ==================== Type Definitions ====================
 
 export interface GenerateImageParams {
-  prompt: string;
-  aspect_ratio?: string;
-  steps?: number;
-  guidance?: number;
-  preset_id?: number | null;
+  product_image: File;
+  shot_type: 'lifestyle' | 'hero' | 'flat_lay' | 'context' | 'white_background';
+  product_description?: string;
 }
 
 export interface GeneratedImage {
   id: number;
-  url: string;
-  prompt: string;
+  user_id: number;
+  brand_preset_id: number | null;
+  product_image_path: string;
+  user_intent: string;
+  structured_prompt: Record<string, any>;
+  generated_image_url: string;
+  shot_type: string;
+  angle: string;
+  style: string;
+  bria_request_id: string;
+  metadata: Record<string, any>;
   created_at: string;
-  settings?: {
-    aspect_ratio: string;
-    steps: number;
-    guidance: number;
-  };
+  updated_at: string;
+  // Frontend convenience fields (mapped from backend)
+  url?: string; // mapped from generated_image_url
+  prompt?: string; // mapped from user_intent
 }
 
 export interface Preset {
   id: number;
+  user_id: number;
   name: string;
-  description: string;
-  prompt: string;
-  category: string;
+  description: string | null;
+  shot_type: string;
+  structured_prompt: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+  // Frontend convenience fields
+  prompt?: string; // stringified structured_prompt
+  category?: string; // derived from shot_type if needed
+}
+
+export interface CreatePresetParams {
+  name: string;
+  description?: string;
+  shot_type: 'lifestyle' | 'hero' | 'flat_lay' | 'context' | 'white_background' | 'portrait' | 'landscape' | 'instagram_post' | 'square' | 'instagram_story';
+  structured_prompt: Record<string, any>;
+}
+
+export interface UpdatePresetParams {
+  name?: string;
+  description?: string;
+  structured_prompt?: Record<string, any>;
+}
+
+export interface ApplyPresetParams {
+  preset_id: number;
+  product_image: File;
+  product_description?: string;
+}
+
+export interface BatchGenerateParams {
+  preset_id: number;
+  product_images: File[];
+  product_descriptions?: string[];
 }
 
 export interface AuthResponse {
@@ -44,6 +85,8 @@ export interface User {
   email: string;
 }
 
+// ==================== API Service Class ====================
+
 class ApiService {
   private baseUrl: string;
 
@@ -51,7 +94,8 @@ class ApiService {
     this.baseUrl = baseUrl;
   }
 
-  private getToken(): string | null {
+  // Token management
+  getToken(): string | null {
     return localStorage.getItem("auth_token");
   }
 
@@ -67,154 +111,251 @@ class ApiService {
     return !!this.getToken();
   }
 
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {},
-    requiresAuth = true
-  ): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "Accept": "application/json",
+  // Helper to map backend response to frontend format
+  private mapGeneratedImage(data: any): GeneratedImage {
+    return {
+      ...data,
+      url: data.generated_image_url,
+      prompt: data.user_intent,
     };
-
-    if (requiresAuth) {
-      const token = this.getToken();
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...headers,
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: "Request failed" }));
-      throw new Error(error.message || `HTTP error ${response.status}`);
-    }
-
-    return response.json();
   }
 
-  // Authentication
+  private mapPreset(data: any): Preset {
+    return {
+      ...data,
+      prompt: typeof data.structured_prompt === 'object' 
+        ? JSON.stringify(data.structured_prompt) 
+        : data.structured_prompt,
+    };
+  }
+
+  // ==================== Authentication ====================
+  
   async register(name: string, email: string, password: string, password_confirmation: string): Promise<AuthResponse> {
-    const response = await this.request<AuthResponse>("/register", {
-      method: "POST",
-      body: JSON.stringify({ name, email, password, password_confirmation }),
-    }, false);
-    this.setToken(response.token);
-    return response;
+    try {
+      const response = await axiosInstance.post<AuthResponse>("/register", {
+        name,
+        email,
+        password,
+        password_confirmation,
+      });
+      
+      const data = extractApiData<AuthResponse>(response.data);
+      this.setToken(data.token);
+      return data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
   async login(email: string, password: string): Promise<AuthResponse> {
-    const response = await this.request<AuthResponse>("/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    }, false);
-    this.setToken(response.token);
-    return response;
+    try {
+      const response = await axiosInstance.post<AuthResponse>("/login", {
+        email,
+        password,
+      });
+      
+      const data = extractApiData<AuthResponse>(response.data);
+      this.setToken(data.token);
+      return data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
   async logout(): Promise<void> {
-    await this.request("/logout", { method: "POST" });
-    this.clearToken();
+    try {
+      await axiosInstance.post("/logout");
+      this.clearToken();
+    } catch (error) {
+      // Clear token even if request fails
+      this.clearToken();
+      throw new Error(handleApiError(error));
+    }
   }
 
   async getUser(): Promise<User> {
-    return this.request<User>("/user");
-  }
-
-  // Image Upload
-  async uploadProduct(formData: FormData): Promise<unknown> {
-    const token = this.getToken();
-    const response = await fetch(`${this.baseUrl}/upload-product`, {
-      method: "POST",
-      headers: {
-        "Accept": "application/json",
-        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: "Upload failed" }));
-      throw new Error(error.message || `HTTP error ${response.status}`);
+    try {
+      const response = await axiosInstance.get<User>("/user");
+      return extractApiData<User>(response.data);
+    } catch (error) {
+      throw new Error(handleApiError(error));
     }
-
-    return response.json();
   }
 
-  // Image Generation
+  // ==================== Image Upload ====================
+  
+  async uploadProduct(productImage: File): Promise<{ message: string; path: string; url: string }> {
+    try {
+      const formData = createFormData({ product_image: productImage });
+      const response = await axiosInstance.post("/upload-product", formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return extractApiData(response.data);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  // ==================== Image Generation ====================
+  
   async generateImage(params: GenerateImageParams): Promise<GeneratedImage> {
-    return this.request<GeneratedImage>("/generate", {
-      method: "POST",
-      body: JSON.stringify(params),
-    });
+    try {
+      const formData = createFormData({
+        product_image: params.product_image,
+        shot_type: params.shot_type,
+        product_description: params.product_description || '',
+      });
+
+      const response = await axiosInstance.post("/generate", formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      // Backend returns: { message, data: GeneratedImage, image_url }
+      const responseData = response.data as { data?: GeneratedImage; image_url?: string; [key: string]: any };
+      const imageData = responseData.data || responseData;
+      return this.mapGeneratedImage(imageData);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
-  // Gallery (generations)
+  // ==================== Gallery (Generations) ====================
+  
   async getImages(search?: string): Promise<GeneratedImage[]> {
-    const query = search ? `?search=${encodeURIComponent(search)}` : "";
-    return this.request<GeneratedImage[]>(`/generations${query}`);
+    try {
+      const params = search ? { search } : {};
+      const response = await axiosInstance.get<GeneratedImage[]>("/generations", { params });
+      const data = extractApiData<GeneratedImage[]>(response.data);
+      return Array.isArray(data) ? data.map(img => this.mapGeneratedImage(img)) : [];
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
   async getImage(id: number): Promise<GeneratedImage> {
-    return this.request<GeneratedImage>(`/generation/${id}`);
+    try {
+      const response = await axiosInstance.get<GeneratedImage>(`/generation/${id}`);
+      const data = extractApiData<GeneratedImage>(response.data);
+      return this.mapGeneratedImage(data);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
   async deleteImage(id: number): Promise<void> {
-    return this.request(`/generation/${id}`, {
-      method: "DELETE",
-    });
+    try {
+      await axiosInstance.delete(`/generation/${id}`);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
-  // Presets
+  // ==================== Brand Presets ====================
+  
   async getPresets(): Promise<Preset[]> {
-    return this.request<Preset[]>("/presets");
+    try {
+      const response = await axiosInstance.get<{ message?: string; data: Preset[] }>("/presets");
+      // Backend returns: { message: "...", data: [...] }
+      // Axios response.data is the actual response body
+      const responseData = response.data as { message?: string; data: Preset[] } | Preset[];
+      const data = extractApiData<Preset[]>(responseData);
+      return Array.isArray(data) ? data.map(preset => this.mapPreset(preset)) : [];
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
   async getPreset(id: number): Promise<Preset> {
-    return this.request<Preset>(`/presets/${id}`);
+    try {
+      const response = await axiosInstance.get<Preset>(`/presets/${id}`);
+      const data = extractApiData<Preset>(response.data);
+      return this.mapPreset(data);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
-  async createPreset(preset: Omit<Preset, "id">): Promise<Preset> {
-    return this.request<Preset>("/presets", {
-      method: "POST",
-      body: JSON.stringify(preset),
-    });
+  async createPreset(preset: CreatePresetParams): Promise<Preset> {
+    try {
+      const response = await axiosInstance.post<{ data: Preset } | Preset>("/presets", preset);
+      const data = extractApiData<Preset>(response.data);
+      return this.mapPreset(data);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
-  async updatePreset(id: number, preset: Partial<Omit<Preset, "id">>): Promise<Preset> {
-    return this.request<Preset>(`/presets/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(preset),
-    });
+  async updatePreset(id: number, preset: UpdatePresetParams): Promise<Preset> {
+    try {
+      const response = await axiosInstance.put<{ data: Preset } | Preset>(`/presets/${id}`, preset);
+      const data = extractApiData<Preset>(response.data);
+      return this.mapPreset(data);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
   async deletePreset(id: number): Promise<void> {
-    return this.request(`/presets/${id}`, {
-      method: "DELETE",
-    });
+    try {
+      await axiosInstance.delete(`/presets/${id}`);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
-  async applyPreset(id: number): Promise<GeneratedImage> {
-    return this.request<GeneratedImage>(`/presets/${id}/apply`, {
-      method: "POST",
-    });
+  async applyPreset(params: ApplyPresetParams): Promise<GeneratedImage> {
+    try {
+      // Backend expects preset_id in FormData body (route has {id} but controller doesn't use it)
+      const formData = new FormData();
+      formData.append('preset_id', params.preset_id.toString());
+      formData.append('product_image', params.product_image);
+      if (params.product_description) {
+        formData.append('product_description', params.product_description);
+      }
+
+      const response = await axiosInstance.post(`/presets/${params.preset_id}/apply`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      // Backend returns: { message, data: GeneratedImage, image_url }
+      const responseData = response.data as { data?: GeneratedImage; image_url?: string; [key: string]: any };
+      const imageData = responseData.data || responseData;
+      return this.mapGeneratedImage(imageData);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 
-  // Batch Processing
-  async batchGenerate(params: unknown): Promise<unknown> {
-    return this.request("/batch-generate", {
-      method: "POST",
-      body: JSON.stringify(params),
-    });
+  // ==================== Batch Processing ====================
+  
+  async batchGenerate(params: BatchGenerateParams): Promise<{ message: string; total_images: number; status: string }> {
+    try {
+      const formData = createFormData({
+        preset_id: params.preset_id,
+        product_images: params.product_images,
+        product_descriptions: params.product_descriptions || [],
+      });
+
+      const response = await axiosInstance.post("/batch-generate", formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      return extractApiData(response.data);
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
   }
 }
 
+// Export singleton instance
 export const api = new ApiService(API_BASE_URL);
+

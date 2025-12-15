@@ -1,7 +1,21 @@
-import { useState } from "react";
-import { Images, Sparkles, Settings2, ChevronLeft, ChevronRight, Wand2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Images, Sparkles, Settings2, ChevronLeft, ChevronRight, Wand2, User, LogOut, Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
+import { getErrorMessage, logout } from "@/lib/api-utils";
 
 const navItems = [
   { title: "Generate", url: "/generate", icon: Sparkles },
@@ -11,6 +25,48 @@ const navItems = [
 
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    fetchUser();
+  }, []);
+
+  const fetchUser = async () => {
+    if (!api.isAuthenticated()) {
+      setIsLoadingUser(false);
+      return;
+    }
+
+    try {
+      const userData = await api.getUser();
+      setUser(userData);
+    } catch (err) {
+      // Silently fail - user might not be authenticated
+      console.error("Failed to load user:", err);
+    } finally {
+      setIsLoadingUser(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate("/auth");
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    }
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
 
   return (
     <aside
@@ -49,6 +105,68 @@ export function AppSidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {/* User Menu */}
+      {api.isAuthenticated() && (
+        <div className="p-3 border-t border-sidebar-border">
+          {isLoadingUser ? (
+            <div className="flex items-center justify-center p-2">
+              <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
+            </div>
+          ) : user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-sidebar-accent transition-colors",
+                    collapsed && "justify-center px-0"
+                  )}
+                >
+                  <Avatar className="w-8 h-8">
+                    <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                      {getInitials(user.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  {!collapsed && (
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                    </div>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <NavLink to="/profile" className="flex items-center gap-2">
+                    <User className="w-4 h-4" />
+                    Profile
+                  </NavLink>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={handleLogout}
+                  className="text-destructive focus:text-destructive cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate("/auth")}
+              className="w-full justify-start"
+            >
+              <User className="w-4 h-4 mr-2" />
+              {!collapsed && "Login"}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Collapse Toggle */}
       <button
